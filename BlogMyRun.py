@@ -7,46 +7,86 @@ import json
 import datetime
 import string
 import dateutil.parser as dparser
+import argparse
 
 import pdb
 
 api_base_url = 'https://api.smashrun.com/v1/'
 runner_name = 'peter.smith'
-authorization_token = {'access_token': '____7065-HQz+b1C3qaqyLuH6lrIPe54LtTrbCBboa6u3SVxvYE'}
+authorization_token = {'access_token': '____7065-vl9c9W0JyCiq+DN6Ku2jvs93VgoW5BCzXFSjH7dGda0'}
 
+test_polyline = 'd_qvEu{sc`@eD}VeSocAuTiZyk@wmAoLeNeP}EoDeCgCuGaFw]o\\i`@_`@gQo]cMyO_a@wAkBk@k@gC{CAiBhD{EvB}NfEsGIuQQoDuC}FkCqPkFaDaKyHwP_d@eGyd@bD_P[qD_NwUqJkLyEaNeC{_@K{y@mBch@dGo]jCqp@s@wHsOcSqKuYgX}Qo@wJqCkGeAmNgGeNeFaGkZuV_KoAaSBiRqDefAe|@uByR_C`CeFwE~AsD'
+
+
+options_verbose = 0
+options_test_map = False
+options_ndays = 1
+options_marker = False
+options_all_days = False
+map_marker = 'size:mid%7Ccolor:0xff0000%'
+
+def vlog(level, message):
+    if level <= options_verbose:
+        print(message)
+    return(True)
 
 
 
 def call_smashrun_api(api_function, api_extension = '', payload = {}):
     """ Does an authorized call of a SmashRun api function """
     payload.update(authorization_token)
+    
     api = ''.join([api_base_url, runner_name, api_function, api_extension])
 
+    vlog(2, 'API url: {}'.format(api))
+    
     response = requests.get(api, params=payload)
     
     if response.status_code != 200:
         print("Request failed: {}".format(response.status_code))
         print("Request url: {}".format(response.url))
         print("Request text: {}".format(response.text))
-        response = []
+        result = []
     else:
-        response = json.loads(response.text)        
+        result = json.loads(response.text)        
 
-        return response
+    vlog(3, 'API url complete: {}'.format(response.url))
+
+    return(result)
+
+
+def utc_days_ago(days):
+    search_date = datetime.datetime.now() - datetime.timedelta(days=days)
+    result = int(search_date.timestamp())
+
+    # pdb.set_trace()
+    
+    return(result)
 
 
 def get_activity_list():
-    """ Get all the details of a SmashRun Actity """
-    activity_list = call_smashrun_api('/activities/search/ids', payload = {})
+    """ Get list the details of a SmashRun Actity """
 
+    payload = {}
+
+    if options_all_days:
+        api_function = '/activities/search/ids'
+    else:
+        # otherwise, get yesterday
+        api_function = '/activities/search/ids'
+        payload = {'fromDate' : utc_days_ago(options_ndays)}
+    
+    activity_list = call_smashrun_api(api_function, payload = payload)
     return(activity_list)
+
+
 
 def get_activity_details(activity_id):
     """ Get all the details of a SmashRun Actity """
     activity_details_list = call_smashrun_api('/activities/',
                                               api_extension=str(activity_id), payload = {})
-
     return(activity_details_list)
+
 
 
 def get_activity_map(activity_id):
@@ -54,7 +94,6 @@ def get_activity_map(activity_id):
     polyline_list = call_smashrun_api('/activities/',
                                  api_extension= ''.join([str(activity_id), '/polyline']),
                                  payload = {})
-
     return(polyline_list)
 
 
@@ -165,7 +204,7 @@ def create_map_image(activity_details):
                'maptype=hybrid',
                'size=400x400',
                'sensor=true',
-               'markers=icon:http://www.petersmith.org/images/runicon.png%7Clabel:S%7C{},{}'.format(latitude, longitude),
+               'markers={}%7Clabel:S%7C{},{}'.format(map_marker, latitude, longitude),
                'path=enc:{}'.format(polyline)
     ]
 
@@ -180,14 +219,74 @@ def create_map_image(activity_details):
     
     return(True)
 
+
+
+
+def check_positive(value):
+    ivalue = int(value)
+    
+    if ivalue <= 0:
+         raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
+    return ivalue
+
+
+def parse_args():
+    """ parse any commandline arguments """
+    global options_verbose
+    global options_test_map
+    global options_ndays                   # We use the default of 1 when nothing is specified.
+    global options_marker
+    global options_all_days
+    global map_marker
+
+
+    parser = argparse.ArgumentParser(description='Import runs from SmashRun to Hugo formatted blog posts.')
+    parser.add_argument('-v', '--verbose', help='Increase output verbosity', action='count')
+    parser.add_argument('-a', '--all', help='Get all the activities from SmashRun',
+                        action='store_true')
+    parser.add_argument('-d', '--days',
+                        help='Get the activities that occured in the last n days (default: %(default)s)',
+                        type=check_positive, default=1, action='store')
+    parser.add_argument('-m', '--marker', help='URL of icon to be used as a marker on the maps', action='store')
+
+    args = parser.parse_args()
+
+    options_verbose = args.verbose
+
+    if args.marker:
+        map_marker = 'icon:{}'.format(args.marker)
+    
+    if args.all:
+        options_all_days = True       # Note this takes priority over the ndays option
+
+    options_ndays = args.days
+
+        
+    options_test_map = False
+        
+    return(True)
+
+
+
 def main():
-    """ process all my runs from SmashRun into blog posts """
+    """ process  runs from SmashRun into blog posts """
+    parse_args()
+
     for activity in get_activity_list():
+        vlog(1, 'Activity ID: {}'.format(activity))
         activity_details = get_activity_details(activity)
         activity_details.update(get_activity_map(activity))
         create_hugo_post(activity_details)
         create_map_image(activity_details)
     return(True)
 
+
+
 if __name__ == "__main__":
     main()
+
+    
+# For each month it create a macro-log comparing this month with
+# previous months and previous year
+
+# Add proper OAUTH2 authentication, so the script can work for anyone.
