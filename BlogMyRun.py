@@ -17,12 +17,11 @@ import pdb
 #
 # Some basic definitions
 #
-api_base_url = 'https://api.smashrun.com/v1/'
-runner_name = 'peter.smith'
 authorization_token = {'access_token': '____7065-vl9c9W0JyCiq+DN6Ku2jvs93VgoW5BCzXFSjH7dGda0'}
+api_base_url = 'https://api.smashrun.com/v1/my/'
 error_code = 1      # In case we need to sys.exit()
-
 map_marker = 'size:mid%7Ccolor:0xff0000%'
+datestamp_filename = 'BlogMyRun-datestamp.txt'
 bad_runs = [674029,672025,592434,674029,
             592449,592450,602932,3372906,
             3384512,3391412,3931662,3942470]
@@ -37,6 +36,7 @@ options_ndays = 1
 options_page = 0
 options_marker = False
 options_all_days = False
+options_new_runs = False
 options_stats = False
 options_template_file = 'BlogMyRun.markdown'
 
@@ -49,12 +49,17 @@ def vlog(level, message):
     return(True)
 
 
+def touch(path):
+    with open(path, 'a'):
+        os.utime(path, None)
+
+
 def call_smashrun_api(api_function, api_extension = '', payload = {}):
-    """ Does an authorized call of a SmashRun api function """
+    """ Does an authorized call of a SmashRun api function with a payload """
     payload.update(authorization_token)
     
-    api = ''.join([api_base_url, runner_name, api_function, api_extension])
-    vlog(2, 'API url: {}'.format(api))
+    api = ''.join([api_base_url, api_function, api_extension])
+    vlog(3, 'API url: {}'.format(api))
     
     response = requests.get(api, params=payload)
     
@@ -67,7 +72,7 @@ def call_smashrun_api(api_function, api_extension = '', payload = {}):
     else:
         result = json.loads(response.text)        
 
-    vlog(3, 'API url complete: {}'.format(response.url))
+    vlog(4, 'API url complete: {}'.format(response.url))
 
     return(result)
 
@@ -87,10 +92,23 @@ def get_activity_list():
     payload = {}
     api_function = '/activities/search/ids'
 
-    if not(options_all_days):
-        # otherwise, get all runs since a date
-        payload = {'fromDate' : utc_days_ago(options_ndays)}
+    if options_new_runs:
+        if os.path.isfile(datestamp_filename):
+            last_modified_date = int(os.path.getmtime(datestamp_filename))
+        else:
+            last_modified_date = 0
 
+        vlog(2, 'Time stamp {}'.format(datetime.datetime.fromtimestamp(
+            last_modified_date).strftime('%Y-%m-%d %H:%M:%S')))
+            
+        payload = {'fromDate' : last_modified_date}
+    else:
+        payload = {'fromDate' : utc_days_ago(options_ndays)}
+        
+    if options_all_days:
+        # otherwise, get all runs since a date
+        payload = {}
+        
     if options_page > 0:
         # otherwise, get 100 runs on page 'n'
         payload = {'page' : options_page-1, 'count' : 100}
@@ -135,13 +153,13 @@ def activity_base_filename(activity_details):
 
 
 
-def create_hugo_post(activity_details):
+def create_hugo_post(activity_details, username):
     """ create a hugo blog post from the activity_details and the added polyline """
 
     
 
     # The url of the equivalent page on SmashRun
-    run_url = 'http://smashrun.com/{}/run/{}'.format(runner_name, activity_details['activityId'])
+    run_url = 'http://smashrun.com/{}/run/{}'.format(username, activity_details['activityId'])
 
     
     # get the date of the run    
@@ -211,9 +229,9 @@ def create_hugo_post(activity_details):
     
     markdown = template_environment.get_template(options_template_file).render(context)
 
-    vlog(1, fileName)
+    vlog(2, fileName)
     with open(fileName, 'w') as fwrite:
-        vlog(4, markdown)
+        vlog(5, markdown)
         fwrite.write(markdown)
         fwrite.close()
         
@@ -263,6 +281,7 @@ def parse_args():
     global options_verbose
     global options_test_map
     global options_ndays                   # We use the default of 1 when nothing is specified.
+    global options_new_runs
     global options_marker
     global options_page
     global options_all_days
@@ -272,22 +291,24 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description='Import runs from SmashRun to Hugo formatted blog posts.')
 
-    parser.add_argument('-v', '--verbose', help='Increase output verbosity', action='count')
     parser.add_argument('-a', '--all', help='Get all the activities from SmashRun',
                         action='store_true')
     parser.add_argument('-d', '--days',
                         help='Get the activities that occured in the last n days (default: %(default)s)',
-                        type=check_positive, default=1, action='store')
+                        type=check_positive, default=1, const=1, nargs='?', action='store')
     parser.add_argument('-m', '--marker', help='URL of icon to be used as a marker on the maps',
                         action='store')
+    parser.add_argument('-n', '--new-runs', help='Get all the runs since the last time the script was used',
+                        action='store_true')
     parser.add_argument('-p', '--page', help='Get page n of 100 entries',
                         type=int, default=0, action='store')
     parser.add_argument('-s', '--stats', help='Print out some stats about SmashRun',
                         action='store_true')
+    parser.add_argument('-v', '--verbose', help='Increase output verbosity', 
+                        type=check_positive, default=1, const=1, nargs='?', action='store')
 
     args = parser.parse_args()
 
-    
     if args.verbose:
         options_verbose = args.verbose
     else:
@@ -303,17 +324,30 @@ def parse_args():
         options_all_days = True       # Note this takes priority over the ndays option
 
     options_ndays = args.days
-        
+    options_new_runs = args.new_runs
     options_test_map = False
         
     return(True)
 
+def get_username():
+    """ Get list the details of a SmashRun Actity """
+
+    payload = {}
+    api_function = '/userinfo'
+
+    userinfo = call_smashrun_api(api_function, payload = payload)
+    vlog(2, userinfo)
+
+    username = userinfo['userName']
+    vlog(1, username)
+    return(username)
 
 
 def main():
     """ process  runs from SmashRun into blog posts """
     parse_args()
 
+    username = get_username()
     for activity in get_activity_list():
         if activity in bad_runs:
             vlog(0, 'Skipping bad run ID: {}'.format(activity))
@@ -321,8 +355,10 @@ def main():
             vlog(1, 'Activity ID: {}'.format(activity))
             activity_details = get_activity_details(activity)
             activity_details.update(get_activity_map(activity))
-            create_hugo_post(activity_details)
-            create_map_image(activity_details)            
+            create_hugo_post(activity_details, username)
+            create_map_image(activity_details)
+
+    touch(datestamp_filename)
     return(True)
 
 
