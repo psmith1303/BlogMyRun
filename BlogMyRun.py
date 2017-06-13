@@ -8,28 +8,45 @@ import datetime
 import string
 import dateutil.parser as dparser
 import argparse
+import sys
+import os
+from jinja2 import Environment, FileSystemLoader
 
 import pdb
 
+#
+# Some basic definitions
+#
 api_base_url = 'https://api.smashrun.com/v1/'
 runner_name = 'peter.smith'
 authorization_token = {'access_token': '____7065-vl9c9W0JyCiq+DN6Ku2jvs93VgoW5BCzXFSjH7dGda0'}
+error_code = 1      # In case we need to sys.exit()
 
-test_polyline = 'd_qvEu{sc`@eD}VeSocAuTiZyk@wmAoLeNeP}EoDeCgCuGaFw]o\\i`@_`@gQo]cMyO_a@wAkBk@k@gC{CAiBhD{EvB}NfEsGIuQQoDuC}FkCqPkFaDaKyHwP_d@eGyd@bD_P[qD_NwUqJkLyEaNeC{_@K{y@mBch@dGo]jCqp@s@wHsOcSqKuYgX}Qo@wJqCkGeAmNgGeNeFaGkZuV_KoAaSBiRqDefAe|@uByR_C`CeFwE~AsD'
+map_marker = 'size:mid%7Ccolor:0xff0000%'
+bad_runs = [674029,672025,592434,674029,
+            592449,592450,602932,3372906,
+            3384512,3391412,3931662,3942470]
 
 
+#
+# Command-line variables
+#
 options_verbose = 0
 options_test_map = False
 options_ndays = 1
+options_page = 0
 options_marker = False
 options_all_days = False
-map_marker = 'size:mid%7Ccolor:0xff0000%'
+options_stats = False
+options_template_file = 'BlogMyRun.markdown'
+
+
 
 def vlog(level, message):
+    """ print out a message if needed """
     if level <= options_verbose:
         print(message)
     return(True)
-
 
 
 def call_smashrun_api(api_function, api_extension = '', payload = {}):
@@ -37,7 +54,6 @@ def call_smashrun_api(api_function, api_extension = '', payload = {}):
     payload.update(authorization_token)
     
     api = ''.join([api_base_url, runner_name, api_function, api_extension])
-
     vlog(2, 'API url: {}'.format(api))
     
     response = requests.get(api, params=payload)
@@ -47,6 +63,7 @@ def call_smashrun_api(api_function, api_extension = '', payload = {}):
         print("Request url: {}".format(response.url))
         print("Request text: {}".format(response.text))
         result = []
+        sys.exit(error_code)
     else:
         result = json.loads(response.text)        
 
@@ -55,26 +72,28 @@ def call_smashrun_api(api_function, api_extension = '', payload = {}):
     return(result)
 
 
+
 def utc_days_ago(days):
+    """ Convert a number of days into a unix timestamp """
     search_date = datetime.datetime.now() - datetime.timedelta(days=days)
     result = int(search_date.timestamp())
-
-    # pdb.set_trace()
-    
     return(result)
+
 
 
 def get_activity_list():
     """ Get list the details of a SmashRun Actity """
 
     payload = {}
+    api_function = '/activities/search/ids'
 
-    if options_all_days:
-        api_function = '/activities/search/ids'
-    else:
-        # otherwise, get yesterday
-        api_function = '/activities/search/ids'
+    if not(options_all_days):
+        # otherwise, get all runs since a date
         payload = {'fromDate' : utc_days_ago(options_ndays)}
+
+    if options_page > 0:
+        # otherwise, get 100 runs on page 'n'
+        payload = {'page' : options_page-1, 'count' : 100}
     
     activity_list = call_smashrun_api(api_function, payload = payload)
     return(activity_list)
@@ -97,6 +116,7 @@ def get_activity_map(activity_id):
     return(polyline_list)
 
 
+
 def safe_dictionary_item(dictionary, item):
     """ return an item from a dictionary or None """
     if item in dictionary:
@@ -106,17 +126,22 @@ def safe_dictionary_item(dictionary, item):
     return(result)
 
 
+
 def activity_base_filename(activity_details):
+    """ make up the base filename to store Hugo posts, and their matching images """
     runDate = dparser.parse(activity_details['startDateTimeLocal'],fuzzy=True)
     fileName = runDate.strftime('%Y%m%d-%H%m-running')
     return(fileName)
 
 
+
 def create_hugo_post(activity_details):
     """ create a hugo blog post from the activity_details and the added polyline """
 
+    
+
     # The url of the equivalent page on SmashRun
-    run_url = ' http://smashrun.com/{}/run/{}'.format(runner_name, activity_details['activityId'])
+    run_url = 'http://smashrun.com/{}/run/{}'.format(runner_name, activity_details['activityId'])
 
     
     # get the date of the run    
@@ -135,61 +160,63 @@ def create_hugo_post(activity_details):
     else:
         postDate = postDate[:19] + '-' + postDate[20:]
 
-    print(fileName)
-
-    fwrite = open("{}".format(fileName), 'w')
-
     seconds = activity_details['duration']
     hours, seconds =  seconds // 3600, seconds % 3600
     minutes, seconds = seconds // 60, seconds % 60                  
     duration = '{:02.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds)
 
-    seconds = activity_details['duration'] // activity_details['distance']
-    hours, seconds =  seconds // 3600, seconds % 3600
-    minutes, seconds = seconds // 60, seconds % 60                  
-    pace = '{:02.0f}:{:02.0f}'.format(minutes, seconds)
-    
-    # write the header
+    if activity_details['distance'] > 0:
+        seconds = activity_details['duration'] // activity_details['distance']
+        hours, seconds =  seconds // 3600, seconds % 3600
+        minutes, seconds = seconds // 60, seconds % 60                  
+        pace = '{:02.0f}:{:02.0f}'.format(minutes, seconds)
+    else:
+        pace = '00:00:00'
+
     #
-    fwrite.write('+++\n')
-    fwrite.write('date = "' + postDate + '"\n')
-    fwrite.write('title = "Ran {:.1f} Km in {} ({} min/Km)"\n'.format(activity_details['distance'], duration, pace))
-    fwrite.write('categories = ["Runs"]\n')
-    fwrite.write('slug = "' + slugName + '"\n')
-    fwrite.write('draft = "False"\n')
-    fwrite.write('runmap = "/images/run-maps/{}"\n'.format(imageName))
-    fwrite.write('+++\n\n')
+    # Okay, let's populate the template
+    #
+    path = os.path.dirname(os.path.abspath(__file__))
+    template_dir = os.path.join(path, 'templates')
+    template_environment = Environment(
+        loader=FileSystemLoader(template_dir),
+        autoescape=False,
+        line_statement_prefix=None, # Do not what this mucking up markdown!
+        trim_blocks=False)
 
-    fwrite.write(activity_details['notes'])
-
-    fwrite.write('\n<!--more-->\n')
-    fwrite.write('\n<center>')
+    context = {'RunDate'         : str(postDate),
+               'RunTitle'        : 'Ran {:.1f} Km in {} ({} min/Km)'.format(activity_details['distance'],
+                                                                     duration, pace),
+               'RunCategory'     : 'Runs',
+               'RunSlug'         : slugName,
+               'RunMapFile'      : '/images/run-maps/{}'.format(imageName),
+               'RunNotes'        : activity_details['notes'],
+               'RunSmashRunURL'  : run_url,
+               'RunDistance'     : '{:.1f}'.format(safe_dictionary_item(activity_details, 'distance')),
+               'RunDuration'     : str(duration),
+               'RunPace'         : pace,
+               'RunCalories'     : str(safe_dictionary_item(activity_details,'calories')),
+               'RunHeartRateAve' : str(safe_dictionary_item(activity_details, 'heartRateAverage')),
+               'RunHeartRateMax' : str(safe_dictionary_item(activity_details, 'heartRateMax')),
+               'RunHeartRateMin' : str(safe_dictionary_item(activity_details, 'heartRateMin')),
+               'RunVertGain'     : '{:.0f}'.format(safe_dictionary_item(activity_details, 'elevationGain')),
+               'RunVertLost'     : '{:.0f}'.format(safe_dictionary_item(activity_details, 'elevationLoss')),
+               'RunWeather'      : safe_dictionary_item(activity_details, 'weatherType'),
+               'RunTemp'         : '{:.0f}'.format(safe_dictionary_item(activity_details, 'temperature')),
+               'RunHumidity'     : safe_dictionary_item(activity_details, 'humidity'),
+               'RunActivity'     : safe_dictionary_item(activity_details, 'activityType'),
+               'RunSource'       : safe_dictionary_item(activity_details, 'source'),
+               'RunID'           : str(safe_dictionary_item(activity_details, 'activityId'))
+    }
     
-    fwrite.write('[![Click to see the run on SmashRun](/images/run-maps/{} "A map of this run")]({})\n'.format(imageName, run_url))
+    markdown = template_environment.get_template(options_template_file).render(context)
 
-    fwrite.write('</center>\n\n')
-
-
-    fwrite.write('#### Details\n\n')
-    fwrite.write('* Distance: {:.1f} Km\n'.format(safe_dictionary_item(activity_details, 'distance')))
-    fwrite.write('* Duration: {}\n'.format(duration))
-    fwrite.write('* Average pace: {} min/Km\n'.format(pace))
-    fwrite.write('* Calories: {} Cal\n'.format(safe_dictionary_item(activity_details,'calories')))
-    fwrite.write('* Heart rate (ave): {} bpm\n'.format(safe_dictionary_item(activity_details, 'heartRateAverage')))
-    fwrite.write('* Heart rate (max):  {} bpm\n'.format(safe_dictionary_item(activity_details, 'heartRateMax')))
-    fwrite.write('* Heart rate (min):  {} bpm\n'.format(safe_dictionary_item(activity_details, 'heartRateMin')))
-    fwrite.write('* Elevation gain: {:.0f} m\n'.format(safe_dictionary_item(activity_details, 'elevationGain')))
-    fwrite.write('* Elevation loss: {:.0f} m\n'.format(safe_dictionary_item(activity_details, 'elevationLoss')))
-    fwrite.write('* Weather: {}\n'.format(safe_dictionary_item(activity_details, 'weatherType')))
-    fwrite.write('* Temperature: {:.0f} &deg;C\n'.format(safe_dictionary_item(activity_details, 'temperature')))
-    fwrite.write('* Humidity: {}%\n'.format(safe_dictionary_item(activity_details, 'humidity')))
-    fwrite.write('* Activity: {}\n'.format(safe_dictionary_item(activity_details, 'activityType')))
-    fwrite.write('* Source: {}\n'.format(safe_dictionary_item(activity_details, 'source')))
-    fwrite.write('* Run ID: {}\n'.format(safe_dictionary_item(activity_details, 'activityId')))
-    
-    fwrite.write('\nFull details at [SmashRun]({})\n'.format(run_url))
-
-    fwrite.close()
+    vlog(1, fileName)
+    with open(fileName, 'w') as fwrite:
+        vlog(4, markdown)
+        fwrite.write(markdown)
+        fwrite.close()
+        
     return(True)
 
  
@@ -223,6 +250,7 @@ def create_map_image(activity_details):
 
 
 def check_positive(value):
+    """ Check if an option is a positive integer """
     ivalue = int(value)
     
     if ivalue <= 0:
@@ -236,22 +264,37 @@ def parse_args():
     global options_test_map
     global options_ndays                   # We use the default of 1 when nothing is specified.
     global options_marker
+    global options_page
     global options_all_days
+    global options_stats
     global map_marker
 
 
     parser = argparse.ArgumentParser(description='Import runs from SmashRun to Hugo formatted blog posts.')
+
     parser.add_argument('-v', '--verbose', help='Increase output verbosity', action='count')
     parser.add_argument('-a', '--all', help='Get all the activities from SmashRun',
                         action='store_true')
     parser.add_argument('-d', '--days',
                         help='Get the activities that occured in the last n days (default: %(default)s)',
                         type=check_positive, default=1, action='store')
-    parser.add_argument('-m', '--marker', help='URL of icon to be used as a marker on the maps', action='store')
+    parser.add_argument('-m', '--marker', help='URL of icon to be used as a marker on the maps',
+                        action='store')
+    parser.add_argument('-p', '--page', help='Get page n of 100 entries',
+                        type=int, default=0, action='store')
+    parser.add_argument('-s', '--stats', help='Print out some stats about SmashRun',
+                        action='store_true')
 
     args = parser.parse_args()
 
-    options_verbose = args.verbose
+    
+    if args.verbose:
+        options_verbose = args.verbose
+    else:
+        options_verbose = 0
+        
+    if args.page:
+        options_page = args.page
 
     if args.marker:
         map_marker = 'icon:{}'.format(args.marker)
@@ -260,7 +303,6 @@ def parse_args():
         options_all_days = True       # Note this takes priority over the ndays option
 
     options_ndays = args.days
-
         
     options_test_map = False
         
@@ -273,11 +315,14 @@ def main():
     parse_args()
 
     for activity in get_activity_list():
-        vlog(1, 'Activity ID: {}'.format(activity))
-        activity_details = get_activity_details(activity)
-        activity_details.update(get_activity_map(activity))
-        create_hugo_post(activity_details)
-        create_map_image(activity_details)
+        if activity in bad_runs:
+            vlog(0, 'Skipping bad run ID: {}'.format(activity))
+        else:
+            vlog(1, 'Activity ID: {}'.format(activity))
+            activity_details = get_activity_details(activity)
+            activity_details.update(get_activity_map(activity))
+            create_hugo_post(activity_details)
+            create_map_image(activity_details)            
     return(True)
 
 
