@@ -1,5 +1,5 @@
-try:
-	./BlogMyRun.py -v -m "http://www.petersmith.org/images/runicon.png"
+new:
+	./BlogMyRun.py -n -m "http://www.petersmith.org/images/runicon.png"
 
 all:
 	./BlogMyRun.py -a -m "http://www.petersmith.org/images/runicon.png"

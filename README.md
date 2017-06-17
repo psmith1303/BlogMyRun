@@ -10,6 +10,8 @@ The format of the "blog entries" is determined by a [jinja2
 template](http://jinja.pocoo.org/docs/2.9/), so if your layout does
 not quite match mine you can change it.
 
+A SVG polyline of the run is included in the YAML header of the blog entry, as 'runsvg'.
+
 ## Installation
 
 ### Requirements
@@ -36,26 +38,28 @@ directory.
 
 ## Usage
 
-BlogMyRun.py      # Converts runs done in the last day
+BlogMyRun.py           # Converts runs done in the last day
 
-BlogMyRun.py -d 7 # Converts runs done in the last 7 days
+BlogMyRun.py -d 7      # Converts runs done in the last 7 days
 
-BlogMyRun.py -p 2 # Converts page 2 of 100 activities; you can step
-                    through all the activities this way
+BlogMyRun.py -p 2      # Converts page 2 of 100 activities; you can step
+                         through all the activities this way
 
-BlogMyRun.py -a   # Converts all the runs from SmashRun; if you hit
-                    limits, do it a page (100 activities) at a time, 
-				    use -p
+BlogMyRun.py -a        # Converts all the runs from SmashRun; if you hit
+                         limits, do it a page (100 activities) at a time, 
+				         use -p
+					
+BlogMyRun.py -i  10976 #  Converts run with ID 10976
 
-BlogMyRun.py -n   # Convert all the runs from SmashRun since the last
-                    time the application was used. If the application
-                    has not been used before, it will try and get all
-                    the since year zero !
+BlogMyRun.py -n        # Convert all the runs from SmashRun since the last
+                         time the application was used. If the application
+                         has not been used before, it will try and get all
+                         the since year zero !
 
 BlogMyRun.py -m "https://goo.gl/5y3S82" # use the icon at the URL as
 the marker on the maps
 
-BlogMyRun.py -v   # Be verbose, -v -v be more verbose
+BlogMyRun.py -v        # Be verbose, -v 3 be more verbose
 
 ## To do.
 	

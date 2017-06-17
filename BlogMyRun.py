@@ -30,16 +30,19 @@ bad_runs = [674029,672025,592434,674029,
 #
 # Command-line variables
 #
-options_verbose = 0
-options_test_map = False
-options_ndays = 1
-options_page = 0
-options_marker = False
 options_all_days = False
+options_marker = False
+options_ndays = 1
 options_new_runs = False
+options_page = 0
+options_run_id = 0
 options_stats = False
 options_template_file = 'BlogMyRun.markdown'
+options_test_map = False
+options_verbose = 0
 
+#             
+# 592475
 
 
 def vlog(level, message):
@@ -57,18 +60,18 @@ def touch(path):
 def call_smashrun_api(api_function, api_extension = '', payload = {}):
     """ Does an authorized call of a SmashRun api function with a payload """
     payload.update(authorization_token)
-    
+
     api = ''.join([api_base_url, api_function, api_extension])
     vlog(3, 'API url: {}'.format(api))
     
     response = requests.get(api, params=payload)
     
     if response.status_code != 200:
-        print("Request failed: {}".format(response.status_code))
-        print("Request url: {}".format(response.url))
-        print("Request text: {}".format(response.text))
+        print("*** Request failed: {} ***".format(response.status_code))
+        print("*** Request url: {} ***".format(response.url))
+        print("*** Request text: {} ***".format(response.text))
         result = []
-        sys.exit(error_code)
+        # sys.exit(error_code)
     else:
         result = json.loads(response.text)        
 
@@ -127,11 +130,21 @@ def get_activity_details(activity_id):
 
 
 def get_activity_map(activity_id):
-    """ Get the SVG map of a SmashRun activity """
+    """ Get the Google route of a SmashRun activity """
     polyline_list = call_smashrun_api('/activities/',
                                  api_extension= ''.join([str(activity_id), '/polyline']),
                                  payload = {})
     return(polyline_list)
+
+
+
+def get_activity_map_thumbnail(activity_id):
+    """ Get the SVG map of a SmashRun activity """
+    polyline_list = call_smashrun_api('/activities/',
+                                 api_extension= ''.join([str(activity_id), '/polyline/svg']),
+                                 payload = {})
+    return(polyline_list['polyline'])
+
 
 
 
@@ -156,11 +169,10 @@ def activity_base_filename(activity_details):
 def create_hugo_post(activity_details, username):
     """ create a hugo blog post from the activity_details and the added polyline """
 
-    
+    activity_id = activity_details['activityId']
 
     # The url of the equivalent page on SmashRun
-    run_url = 'http://smashrun.com/{}/run/{}'.format(username, activity_details['activityId'])
-
+    run_url = 'http://smashrun.com/{}/run/{}'.format(username, activity_id)
     
     # get the date of the run    
     runDate = dparser.parse(activity_details['startDateTimeLocal'],fuzzy=True)
@@ -170,6 +182,7 @@ def create_hugo_post(activity_details, username):
     slugName = runDate.strftime('run-details-%Y%m%d-%H%m')
     postDate = runDate.isoformat()
     logDate = runDate.strftime('%Y%m%d%H%m')
+    svgPolyline = get_activity_map_thumbnail(activity_id)
     #
     # Fix timezone
     #
@@ -207,6 +220,7 @@ def create_hugo_post(activity_details, username):
                                                                      duration, pace),
                'RunCategory'     : 'Runs',
                'RunSlug'         : slugName,
+               'RunSVG'          : svgPolyline,
                'RunMapFile'      : '/images/run-maps/{}'.format(imageName),
                'RunNotes'        : activity_details['notes'],
                'RunSmashRunURL'  : run_url,
@@ -239,6 +253,8 @@ def create_hugo_post(activity_details, username):
 
  
 def create_map_image(activity_details):
+    """ Use the Google static maps api to create a map image """
+    
     fileName = activity_base_filename(activity_details) + '.png'
 
     latitude = safe_dictionary_item(activity_details, 'startLatitude')
@@ -264,7 +280,30 @@ def create_map_image(activity_details):
     
     return(True)
 
+def process_activity(activity_id, username):
+    """ For a given activity_id create a post etc """
+    
+    activity_details = get_activity_details(activity_id)
+    
+    if len(activity_details) > 0:
+        activity_details.update(get_activity_map(activity_id))
+        create_hugo_post(activity_details, username)
+        create_map_image(activity_details)
+        result = True
+    else:
+        vlog(0, 'Error: Skipping run ID: {}'.format(activity_id))
+        result = False
+    return(result)
 
+def process_activity_list(username):
+    """ iterate through the list of activities """
+    for activity in get_activity_list():
+        if activity in bad_runs:
+            vlog(0, 'Skipping bad run ID: {}'.format(activity))
+        else:
+            vlog(1, 'Activity ID: {}'.format(activity))
+            process_activity(activity, username)
+    return(True)
 
 
 def check_positive(value):
@@ -284,8 +323,9 @@ def parse_args():
     global options_new_runs
     global options_marker
     global options_page
-    global options_all_days
+    global options_run_id
     global options_stats
+    global options_all_days
     global map_marker
 
 
@@ -302,32 +342,39 @@ def parse_args():
                         action='store_true')
     parser.add_argument('-p', '--page', help='Get page n of 100 entries',
                         type=int, default=0, action='store')
+    parser.add_argument('-r', '--run-id', help='Get a specific RUNID',
+                        type=int, default=0, action='store')
     parser.add_argument('-s', '--stats', help='Print out some stats about SmashRun',
                         action='store_true')
     parser.add_argument('-v', '--verbose', help='Increase output verbosity', 
-                        type=check_positive, default=1, const=1, nargs='?', action='store')
+                        type=check_positive, default=0, const=1, nargs='?', action='store')
 
     args = parser.parse_args()
+
+    if args.all:
+        options_all_days = True       # Note this takes priority over the ndays option
+    
+    if args.marker:
+        map_marker = 'icon:{}'.format(args.marker)
+
+    if args.run_id:
+        options_run_id = args.run_id
+        
+    if args.page:
+        options_page = args.page
 
     if args.verbose:
         options_verbose = args.verbose
     else:
         options_verbose = 0
-        
-    if args.page:
-        options_page = args.page
-
-    if args.marker:
-        map_marker = 'icon:{}'.format(args.marker)
-    
-    if args.all:
-        options_all_days = True       # Note this takes priority over the ndays option
 
     options_ndays = args.days
     options_new_runs = args.new_runs
     options_test_map = False
         
     return(True)
+
+
 
 def get_username():
     """ Get list the details of a SmashRun Actity """
@@ -348,16 +395,12 @@ def main():
     parse_args()
 
     username = get_username()
-    for activity in get_activity_list():
-        if activity in bad_runs:
-            vlog(0, 'Skipping bad run ID: {}'.format(activity))
-        else:
-            vlog(1, 'Activity ID: {}'.format(activity))
-            activity_details = get_activity_details(activity)
-            activity_details.update(get_activity_map(activity))
-            create_hugo_post(activity_details, username)
-            create_map_image(activity_details)
 
+    if options_run_id > 0:
+        process_activity(options_run_id, username)
+    else:
+        process_activity_list(username)
+        
     touch(datestamp_filename)
     return(True)
 

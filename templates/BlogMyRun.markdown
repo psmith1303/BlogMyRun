@@ -5,6 +5,7 @@ categories = ["{{ RunCategory }}"]
 slug = "{{ RunSlug }}"
 draft = "False"
 runmap = "{{ RunMapFile }}"
+svgmap = '{{ RunSVG }}'
 +++
 
 {{ RunNotes }}
