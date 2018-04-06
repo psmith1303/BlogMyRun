@@ -3,6 +3,7 @@ date = "{{ RunDate }}"
 title = "{{ RunTitle }}"
 categories = ["{{ RunCategory }}"]
 slug = "{{ RunSlug }}"
+type = "run"
 draft = "False"
 runmap = "{{ RunMapFile }}"
 svgmap = '{{ RunSVG }}'

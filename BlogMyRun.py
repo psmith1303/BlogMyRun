@@ -296,7 +296,13 @@ def process_activity(activity_id, username):
     else:
         vlog(0, 'Error: Skipping run ID: {}'.format(activity_id))
         result = False
+        
+    if options_wait > 0:
+        vlog(0, 'Waiting for {} seconds'.format(options_wait))
+        time.sleep(options_wait)
+
     return(result)
+
 
 def process_activity_list(username):
     """ iterate through the list of activities """
@@ -306,8 +312,6 @@ def process_activity_list(username):
         else:
             vlog(1, 'Activity ID: {}'.format(activity))
             process_activity(activity, username)
-            if options_wait > 0:
-                time.sleep(options_wait)
     return(True)
 
 
@@ -330,6 +334,7 @@ def parse_args():
     global options_page
     global options_run_id
     global options_stats
+    global options_wait
     global options_all_days
     global map_marker
 
@@ -370,6 +375,10 @@ def parse_args():
     if args.page:
         options_page = args.page
 
+    if args.wait:
+        options_wait = args.wait
+  
+        
     if args.verbose:
         options_verbose = args.verbose
     else:
@@ -401,6 +410,9 @@ def main():
     """ process  runs from SmashRun into blog posts """
     parse_args()
 
+    print(">>> options wait main: {} ***".format(options_wait))
+
+    
     username = get_username()
 
     if options_run_id > 0:
