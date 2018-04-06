@@ -55,6 +55,9 @@ BlogMyRun.py -n        # Convert all the runs from SmashRun since the last
                          time the application was used. If the application
                          has not been used before, it will try and get all
                          the since year zero !
+						 
+BlogMyRun.py -a -w 60  # Wait 60 seconds between getting each activity to avoid
+	                     hitting SmashRun's API limits (for user logins).
 
 BlogMyRun.py -m "https://goo.gl/5y3S82" # use the icon at the URL as
 the marker on the maps
