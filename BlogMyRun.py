@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 #
 #
 #
@@ -10,6 +11,7 @@ import dateutil.parser as dparser
 import argparse
 import sys
 import os
+import time
 from jinja2 import Environment, FileSystemLoader
 
 import pdb
@@ -17,7 +19,7 @@ import pdb
 #
 # Some basic definitions
 #
-authorization_token = {'access_token': '____7065-vl9c9W0JyCiq+DN6Ku2jvs93VgoW5BCzXFSjH7dGda0'}
+authorization_token = {'access_token': '____7065-HQz+b1C3qaqyLuH6lrIPe54LtTrbCBboa6u3SVxvYE'}
 api_base_url = 'https://api.smashrun.com/v1/my/'
 error_code = 1      # In case we need to sys.exit()
 map_marker = 'size:mid%7Ccolor:0xff0000%'
@@ -40,6 +42,7 @@ options_stats = False
 options_template_file = 'BlogMyRun.markdown'
 options_test_map = False
 options_verbose = 0
+options_wait = 0
 
 #             
 # 592475
@@ -303,6 +306,8 @@ def process_activity_list(username):
         else:
             vlog(1, 'Activity ID: {}'.format(activity))
             process_activity(activity, username)
+            if options_wait > 0:
+                time.sleep(options_wait)
     return(True)
 
 
@@ -346,6 +351,8 @@ def parse_args():
                         type=int, default=0, action='store')
     parser.add_argument('-s', '--stats', help='Print out some stats about SmashRun',
                         action='store_true')
+    parser.add_argument('-w', '--wait', help='Wait n seconds between fetching runs (to overcome rate limiting)', 
+                        type=check_positive, default=0, const=1, nargs='?', action='store')
     parser.add_argument('-v', '--verbose', help='Increase output verbosity', 
                         type=check_positive, default=0, const=1, nargs='?', action='store')
 
